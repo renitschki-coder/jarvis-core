@@ -422,16 +422,35 @@ async function deployWorker() {
   btn.classList.add('busy'); setStatus('Deploye…','busy');
 
   try {
-    // Direct upload – kein FormData, kein Blob-Clone-Fehler
+    // Multipart upload via manual boundary string (kein Blob, kein FormData-Clone-Fehler)
+    const boundary = '----JarvisCoreBoundary' + Date.now();
+    const metadata = JSON.stringify({
+      main_module: 'index.js',
+      compatibility_date: new Date().toISOString().split('T')[0],
+    });
+    const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="metadata"; filename="metadata.json"',
+      'Content-Type: application/json',
+      '',
+      metadata,
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="index.js"; filename="index.js"',
+      'Content-Type: application/javascript+module',
+      '',
+      code,
+      `--${boundary}--`,
+    ].join('\r\n');
+
     const res = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${cfg.cfAcct}/workers/scripts/${cfg.cfWorker}`,
       {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${cfg.cfToken}`,
-          'Content-Type': 'application/javascript',
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
         },
-        body: code
+        body
       }
     );
     const json = await res.json();
