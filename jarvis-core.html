@@ -43,7 +43,7 @@ header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:sp
 /* CONFIG PANEL */
 #cfg-panel{overflow:hidden;max-height:0;transition:max-height .4s ease,padding .4s ease;
   padding:0 20px;background:var(--bg2);border-bottom:1px solid var(--border)}
-#cfg-panel.open{max-height:700px;padding:16px 20px}
+#cfg-panel.open{max-height:1200px;padding:16px 20px}
 .cfg-section{font-family:var(--display);font-size:8px;letter-spacing:.35em;
   color:rgba(0,184,230,.4);text-transform:uppercase;margin:12px 0 8px}
 .cfg-section:first-child{margin-top:0}
@@ -345,13 +345,20 @@ function updCC(){
 
 // ── Cloudflare API ────────────────────────────────────────────────
 async function cfFetch(cfg, method='GET', body=null) {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${cfg.cfAcct}/workers/scripts/${cfg.cfWorker}`;
-  const opts = {
-    method,
-    headers: { 'Authorization': `Bearer ${cfg.cfToken}` }
-  };
-  if (body) opts.body = body;
-  return fetch(url, opts);
+  // GET (Abrufen) → direkt via Cloudflare API
+  if (method === 'GET') {
+    return fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${cfg.cfAcct}/workers/scripts/${cfg.cfWorker}`,
+      { headers: { 'Authorization': `Bearer ${cfg.cfToken}`, 'Accept': 'application/javascript' } }
+    );
+  }
+  // PUT (Deploy) → via Proxy (umgeht CORS)
+  if (!cfg.cfProxy || !cfg.cfAdmin) throw new Error('Proxy-URL und Admin-Key in Config eintragen.');
+  return fetch(`${cfg.cfProxy}/cf-deploy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': cfg.cfAdmin },
+    body: JSON.stringify({ accountId: cfg.cfAcct, workerName: cfg.cfWorker, token: cfg.cfToken, code: body })
+  });
 }
 
 async function fetchWorker() {
@@ -429,30 +436,14 @@ async function deployWorker() {
   btn.classList.add('busy'); setStatus('Deploye…','busy');
 
   try {
-    // Deploy via eigenen Worker-Proxy (umgeht Cloudflare CORS-Blockade)
-    if (!cfg.cfProxy || !cfg.cfAdmin) {
-      throw new Error('Proxy-URL und Admin-Key in Config eintragen (Deploy-Proxy Bereich).');
-    }
-    const res = await fetch(`${cfg.cfProxy}/cf-deploy`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-key': cfg.cfAdmin,
-      },
-      body: JSON.stringify({
-        accountId:  cfg.cfAcct,
-        workerName: cfg.cfWorker,
-        token:      cfg.cfToken,
-        code
-      })
-    });
+    const res = await cfFetch(cfg, 'PUT', code);
     const json = await res.json();
-    if (!res.ok||!json.success) {
-      throw new Error(json.errors?.map(e=>`[${e.code}] ${e.message}`).join('\n') || JSON.stringify(json,null,2));
+    if (!res.ok || json.error || (!json.success && !json.scriptId)) {
+      throw new Error(json.error || json.errors?.map(e=>`[${e.code}] ${e.message}`).join('\n') || JSON.stringify(json,null,2));
     }
     btn.classList.remove('busy'); btn.classList.add('done'); btn.textContent='✓ Live!';
     setStatus('Deployed!','ok');
-    showOk('w-ok',`✓ Worker live — ${new Date().toLocaleTimeString('de-DE')}\nScript-ID: ${json.result?.id||'—'}`);
+    showOk('w-ok',`✓ Worker live — ${new Date().toLocaleTimeString('de-DE')}\nID: ${json.scriptId||json.result?.id||'—'}`);
     setTimeout(()=>{ btn.classList.remove('done'); btn.textContent='▲ Deploy'; },4000);
   } catch(e) {
     btn.classList.remove('busy'); setStatus('Fehlgeschlagen.','err'); showErr('w-err',e.message);
