@@ -345,18 +345,18 @@ function updCC(){
 
 // ── Cloudflare API ────────────────────────────────────────────────
 async function cfFetch(cfg, method='GET', body=null) {
-  // GET (Abrufen) → direkt via Cloudflare API
-  if (method === 'GET') {
-    return fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${cfg.cfAcct}/workers/scripts/${cfg.cfWorker}`,
-      { headers: { 'Authorization': `Bearer ${cfg.cfToken}`, 'Accept': 'application/javascript' } }
-    );
-  }
-  // PUT (Deploy) → via Proxy (umgeht CORS)
   if (!cfg.cfProxy || !cfg.cfAdmin) throw new Error('Proxy-URL und Admin-Key in Config eintragen.');
+  const headers = { 'Content-Type': 'application/json', 'x-admin-key': cfg.cfAdmin };
+  if (method === 'GET') {
+    // GET via /cf-fetch proxy
+    return fetch(`${cfg.cfProxy}/cf-fetch`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ accountId: cfg.cfAcct, workerName: cfg.cfWorker, token: cfg.cfToken })
+    });
+  }
+  // PUT via /cf-deploy proxy
   return fetch(`${cfg.cfProxy}/cf-deploy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-admin-key': cfg.cfAdmin },
+    method: 'POST', headers,
     body: JSON.stringify({ accountId: cfg.cfAcct, workerName: cfg.cfWorker, token: cfg.cfToken, code: body })
   });
 }
@@ -372,7 +372,9 @@ async function fetchWorker() {
       try{ const j=await res.json(); msg=j.errors?.map(e=>`[${e.code}] ${e.message}`).join('\n')||msg; }catch{}
       throw new Error(msg);
     }
-    const code = await res.text();
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const code = data.code || '';
     document.getElementById('code-ed').value = code;
     updCC();
     setStatus('Geladen.','ok');
