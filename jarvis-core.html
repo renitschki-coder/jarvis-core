@@ -97,6 +97,8 @@ header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:sp
 .btn:disabled{opacity:.35;pointer-events:none}
 .btn-fetch{flex:1;background:var(--dim);color:var(--cyan)}
 .btn-fetch:active{background:rgba(0,184,230,.2)}
+.btn-file{flex:1;background:rgba(155,89,255,.12);color:#C8A8FF;border-color:rgba(155,89,255,.25)}
+.btn-file:active{background:rgba(155,89,255,.25)}
 .btn-deploy{flex:1;background:linear-gradient(135deg,#003FA8,#0077C8);color:#fff;
   border-color:rgba(0,120,200,.35);box-shadow:0 0 14px rgba(0,100,200,.2)}
 .btn-deploy.busy{background:linear-gradient(135deg,#6B4400,#C87800);border-color:rgba(200,120,0,.35)}
@@ -224,8 +226,10 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
   <div class="panel active" id="p-worker">
     <div class="row-btns">
       <button class="btn btn-fetch" onclick="fetchWorker()" id="b-fetch">↓ Abrufen</button>
+      <button class="btn btn-file" onclick="document.getElementById('file-picker').click()" id="b-file">📂 Datei</button>
       <button class="btn btn-deploy" onclick="deployWorker()" id="b-deploy">▲ Deploy</button>
     </div>
+    <input type="file" id="file-picker" accept=".js,.txt" style="display:none" onchange="loadFile(event)">
     <div id="w-err" class="err-box"><div class="err-title">⚠ Fehler</div><pre class="err-body" id="w-err-txt"></pre></div>
     <div id="w-ok"  class="ok-box"><div class="ok-title">✓ Erfolg</div><div class="ok-body" id="w-ok-txt"></div></div>
     <div class="code-hdr">
@@ -389,6 +393,24 @@ async function writeKvTimestamp(cfg) {
 KV-Timestamp gesetzt: ${ts}`;
 }
 
+// Datei vom Handy laden → direkt ins Textfeld
+function loadFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('code-ed').value = ev.target.result;
+    updCC();
+    clearErr('w-err'); clearOk('w-ok');
+    showOk('w-ok', `✓ "${file.name}" geladen — ${(file.size/1024).toFixed(1)}KB
+Bereit zum Deployen.`);
+    setStatus('Datei geladen — bereit.', 'ok');
+  };
+  reader.onerror = () => showErr('w-err', 'Datei konnte nicht gelesen werden.');
+  reader.readAsText(file);
+  e.target.value = ''; // Reset so same file can be reloaded
+}
+
 async function deployWorker() {
   clearErr('w-err'); clearOk('w-ok');
   const code = document.getElementById('code-ed').value.trim();
@@ -400,15 +422,18 @@ async function deployWorker() {
   btn.classList.add('busy'); setStatus('Deploye…','busy');
 
   try {
-    const fd = new FormData();
-    fd.append('metadata', new Blob([JSON.stringify({
-      main_module:'index.js',
-      compatibility_date: new Date().toISOString().split('T')[0],
-      usage_model:'bundled'
-    })],{type:'application/json'}), 'metadata.json');
-    fd.append('index.js', new Blob([code],{type:'application/javascript+module'}), 'index.js');
-
-    const res = await cfFetch(cfg,'PUT',fd);
+    // Direct upload – kein FormData, kein Blob-Clone-Fehler
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${cfg.cfAcct}/workers/scripts/${cfg.cfWorker}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${cfg.cfToken}`,
+          'Content-Type': 'application/javascript',
+        },
+        body: code
+      }
+    );
     const json = await res.json();
     if (!res.ok||!json.success) {
       throw new Error(json.errors?.map(e=>`[${e.code}] ${e.message}`).join('\n') || JSON.stringify(json,null,2));
