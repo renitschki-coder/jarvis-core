@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="JARVIS Core">
 <title>J.A.R.V.I.S. Core</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;600&family=Chakra+Petch:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
@@ -168,6 +169,20 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
   border-top-color:var(--cyan);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #load-txt{font-family:var(--display);font-size:10px;letter-spacing:.35em;color:var(--cyan)}
+
+/* QR MODAL */
+#qr-modal{position:fixed;inset:0;z-index:60;background:rgba(2,8,16,.95);
+  backdrop-filter:blur(8px);display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:20px;padding:24px}
+#qr-modal.show{display:flex}
+#qr-title{font-family:var(--display);font-size:10px;letter-spacing:.35em;
+  color:var(--cyan);text-transform:uppercase;text-align:center}
+#qr-box{background:#fff;padding:16px;border-radius:12px}
+#qr-hint{font-size:11px;letter-spacing:.05em;color:rgba(184,216,232,.5);
+  text-align:center;line-height:1.6;max-width:280px}
+#qr-close{background:var(--dim);border:1px solid var(--border);border-radius:10px;
+  padding:10px 28px;font-family:var(--ui);font-size:12px;letter-spacing:.15em;
+  color:var(--cyan);cursor:pointer;-webkit-tap-highlight-color:transparent}
 </style>
 </head>
 <body>
@@ -213,7 +228,10 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
     <div class="field"><label>KV Namespace ID</label>
       <input id="c-kvid" type="text" placeholder="abc123... (aus Cloudflare Dashboard)" spellcheck="false" autocomplete="off"></div>
 
-    <button class="btn-save" onclick="saveCfg()" style="margin-bottom:16px">✓ Speichern & Schließen</button>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn-save" onclick="saveCfg()" style="flex:2">✓ Speichern & Schließen</button>
+      <button class="btn-save" onclick="showQR()" style="flex:1;background:rgba(155,89,255,.15);border-color:rgba(155,89,255,.3);color:#C8A8FF">⬡ QR</button>
+    </div>
   </div>
 
   <!-- STATUS -->
@@ -266,6 +284,14 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
       placeholder="Hier erscheint das vollständige System-Briefing für Claude..."></textarea>
   </div>
 
+</div>
+
+<!-- QR MODAL -->
+<div id="qr-modal">
+  <div id="qr-title">Config QR-Code</div>
+  <div id="qr-box"><div id="qr-canvas"></div></div>
+  <div id="qr-hint">Mit dem iPhone-Kamera abscannen →<br>Config wird automatisch importiert.</div>
+  <button id="qr-close" onclick="closeQR()">✕ Schließen</button>
 </div>
 
 <!-- LOADING -->
@@ -579,8 +605,52 @@ async function copyBriefing() {
   setTimeout(()=>{ btn.textContent='⎘ Kopieren'; btn.classList.remove('copied'); },2500);
 }
 
+// ── QR Export/Import ─────────────────────────────────────────────
+function showQR() {
+  const cfg = loadCfg();
+  if (!cfg.cfAcct && !cfg.cfToken) {
+    showErr('w-err', 'Zuerst Config speichern, dann QR generieren.');
+    toggleCfg(false); return;
+  }
+  // Encode config as base64 URL param
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
+  const url = window.location.href.split('?')[0] + '?cfg=' + encoded;
+
+  // Clear and generate QR
+  document.getElementById('qr-canvas').innerHTML = '';
+  new QRCode(document.getElementById('qr-canvas'), {
+    text: url, width: 220, height: 220,
+    colorDark: '#000000', colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  document.getElementById('qr-modal').classList.add('show');
+  toggleCfg(false);
+}
+
+function closeQR() {
+  document.getElementById('qr-modal').classList.remove('show');
+}
+
+function checkUrlImport() {
+  const params = new URLSearchParams(window.location.search);
+  const cfg = params.get('cfg');
+  if (!cfg) return;
+  try {
+    const decoded = JSON.parse(decodeURIComponent(escape(atob(cfg))));
+    localStorage.setItem(CFG, JSON.stringify(decoded));
+    // Clean URL
+    window.history.replaceState({}, '', window.location.pathname);
+    // Show success
+    setTimeout(() => {
+      setStatus('Config importiert! ✓', 'ok');
+      toggleCfg(true); // Open config so user can verify
+    }, 300);
+  } catch(e) { console.warn('QR import:', e); }
+}
+
 // ── Init ──────────────────────────────────────────────────────────
 initCfg();
+checkUrlImport();
 setStatus('Bereit.','');
 </script>
 </body>
