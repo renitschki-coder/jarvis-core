@@ -202,6 +202,12 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
     <div class="field"><label>Personal Access Token</label>
       <input id="g-tok" type="password" placeholder="ghp_..." autocomplete="off"></div>
 
+    <div class="cfg-section">Deploy-Proxy</div>
+    <div class="field"><label>Proxy URL (Worker-URL)</label>
+      <input id="c-proxy" type="text" placeholder="https://renitschki-core.wbypwwyjjm.workers.dev" spellcheck="false" autocomplete="off"></div>
+    <div class="field"><label>Admin Key (ADMIN_KEY Secret)</label>
+      <input id="c-admin" type="password" placeholder="dein ADMIN_KEY..." autocomplete="off"></div>
+
     <div class="cfg-section">KV Speicher (JARVIS_DB)</div>
     <div class="field"><label>KV Namespace ID</label>
       <input id="c-kvid" type="text" placeholder="abc123... (aus Cloudflare Dashboard)" spellcheck="false" autocomplete="off"></div>
@@ -267,8 +273,8 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
 <script>
 // ── Config ────────────────────────────────────────────────────────
 const CFG = 'jcore_cfg';
-const fields = ['c-acct','c-wkr','c-tok','c-kvid','g-user','g-repo','g-file','g-tok'];
-const keys   = ['cfAcct','cfWorker','cfToken','cfKvId','ghUser','ghRepo','ghFile','ghToken'];
+const fields = ['c-acct','c-wkr','c-tok','c-kvid','c-proxy','c-admin','g-user','g-repo','g-file','g-tok'];
+const keys   = ['cfAcct','cfWorker','cfToken','cfKvId','cfProxy','cfAdmin','ghUser','ghRepo','ghFile','ghToken'];
 
 function loadCfg() {
   try { return JSON.parse(localStorage.getItem(CFG)||'{}'); } catch{return {};}
@@ -422,37 +428,23 @@ async function deployWorker() {
   btn.classList.add('busy'); setStatus('Deploye…','busy');
 
   try {
-    // Multipart upload via manual boundary string (kein Blob, kein FormData-Clone-Fehler)
-    const boundary = '----JarvisCoreBoundary' + Date.now();
-    const metadata = JSON.stringify({
-      main_module: 'index.js',
-      compatibility_date: new Date().toISOString().split('T')[0],
+    // Deploy via eigenen Worker-Proxy (umgeht Cloudflare CORS-Blockade)
+    if (!cfg.cfProxy || !cfg.cfAdmin) {
+      throw new Error('Proxy-URL und Admin-Key in Config eintragen (Deploy-Proxy Bereich).');
+    }
+    const res = await fetch(`${cfg.cfProxy}/cf-deploy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-key': cfg.cfAdmin,
+      },
+      body: JSON.stringify({
+        accountId:  cfg.cfAcct,
+        workerName: cfg.cfWorker,
+        token:      cfg.cfToken,
+        code
+      })
     });
-    const body = [
-      `--${boundary}`,
-      'Content-Disposition: form-data; name="metadata"; filename="metadata.json"',
-      'Content-Type: application/json',
-      '',
-      metadata,
-      `--${boundary}`,
-      'Content-Disposition: form-data; name="index.js"; filename="index.js"',
-      'Content-Type: application/javascript+module',
-      '',
-      code,
-      `--${boundary}--`,
-    ].join('\r\n');
-
-    const res = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${cfg.cfAcct}/workers/scripts/${cfg.cfWorker}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${cfg.cfToken}`,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        body
-      }
-    );
     const json = await res.json();
     if (!res.ok||!json.success) {
       throw new Error(json.errors?.map(e=>`[${e.code}] ${e.message}`).join('\n') || JSON.stringify(json,null,2));
