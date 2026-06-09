@@ -184,6 +184,7 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
 
   <!-- CONFIG -->
   <div id="cfg-panel">
+    <button class="btn-save" onclick="saveCfg()" style="margin-bottom:16px">✓ Speichern & Schließen</button>
     <div class="cfg-section">Cloudflare</div>
     <div class="field"><label>Account ID</label>
       <input id="c-acct" type="text" placeholder="abc123..." spellcheck="false" autocomplete="off"></div>
@@ -212,7 +213,7 @@ textarea.brief-out{flex:1 1 auto;min-height:180px;width:100%;background:var(--bg
     <div class="field"><label>KV Namespace ID</label>
       <input id="c-kvid" type="text" placeholder="abc123... (aus Cloudflare Dashboard)" spellcheck="false" autocomplete="off"></div>
 
-    <button class="btn-save" onclick="saveCfg()">Speichern</button>
+    <button class="btn-save" onclick="saveCfg()" style="margin-bottom:16px">✓ Speichern & Schließen</button>
   </div>
 
   <!-- STATUS -->
