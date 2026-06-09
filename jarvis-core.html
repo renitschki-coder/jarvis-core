@@ -613,7 +613,10 @@ function showQR() {
     toggleCfg(false); return;
   }
   // Encode config as base64 URL param
-  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
+  // Robust UTF-8 → base64 encode
+  const jsonStr = JSON.stringify(cfg);
+  const encoded = btoa(encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g,
+    (_, p1) => String.fromCharCode(parseInt(p1, 16))));
   const url = window.location.href.split('?')[0] + '?cfg=' + encoded;
 
   // Clear and generate QR
@@ -633,19 +636,28 @@ function closeQR() {
 
 function checkUrlImport() {
   const params = new URLSearchParams(window.location.search);
-  const cfg = params.get('cfg');
-  if (!cfg) return;
+  const raw = params.get('cfg');
+  if (!raw) return;
   try {
-    const decoded = JSON.parse(decodeURIComponent(escape(atob(cfg))));
+    // Robust base64 → UTF-8 decode
+    const jsonStr = decodeURIComponent(
+      atob(raw.replace(/-/g,'+').replace(/_/g,'/'))
+        .split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2,'0')).join('')
+    );
+    const decoded = JSON.parse(jsonStr);
     localStorage.setItem(CFG, JSON.stringify(decoded));
-    // Clean URL
+    // Clean URL so reload doesn't re-import
     window.history.replaceState({}, '', window.location.pathname);
-    // Show success
+    // Re-populate fields with new config + open panel
+    initCfg();
     setTimeout(() => {
-      setStatus('Config importiert! ✓', 'ok');
-      toggleCfg(true); // Open config so user can verify
-    }, 300);
-  } catch(e) { console.warn('QR import:', e); }
+      setStatus('✓ Config importiert!', 'ok');
+      toggleCfg(true);
+    }, 100);
+  } catch(e) {
+    console.warn('QR import error:', e);
+    setStatus('Import fehlgeschlagen: ' + e.message, 'err');
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────
